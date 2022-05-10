@@ -10,6 +10,7 @@ output:
 ```{r setup, echo=FALSE}
 library(tidyverse)
 library(rethinking)
+set.seed(42)
 ```
 
 Okay here is a re-skinned version of some of McElreath's Exercises.
@@ -51,7 +52,7 @@ Okay, so X infected people take the test, and X uninfected people take the test.
 # define grid
 p_grid <- seq(from = 0, to = 1, length.out = 1e4)
 # define prior
-prior <- ifelse(p_grid < 0.5, 0, 1)
+prior <- rep(1, length(p_grid))
 # compute likelihood at each value in grid
 likelihood <- dbinom(11, size = 20, prob = p_grid)
 # compute product of likelihood and prior
@@ -82,7 +83,7 @@ median(samples_pos_infected)
 # define grid
 p_grid <- seq(from = 0, to = 1, length.out = 1e4)
 # define prior
-prior <- ifelse(p_grid < 0.5, 0, 1)
+prior <- rep(1, length(p_grid))
 # compute likelihood at each value in grid
 likelihood <- dbinom(7, size = 20, prob = p_grid)
 # compute product of likelihood and prior
@@ -135,15 +136,12 @@ quantile(samples_pos_uninfected, c(0.025, 0.975))
 
 ```{r point_estimate}
 ## <<<double check>>>
-round(chainmode(samples_pos_infected, adj = 0.01), digits = 2)
-mean(samples_pos_infected)
-median(samples_pos_infected)
+round(mean(samples_pos_infected), 2)
 
-round(chainmode(samples_pos_uninfected, adj = 0.01), digits = 2)
-mean(samples_pos_uninfected)
-median(samples_pos_uninfected)
+round(mean(samples_pos_uninfected), 2)
 
 ```
+While we could use the chain mode (most frequent), we decided to take the mean and give them the values of 54% chance of getting a positive test result given that you're infected and 36% chance of getting a positive test given you are not infected.
 
 ## 2) Dark Cellars
 
