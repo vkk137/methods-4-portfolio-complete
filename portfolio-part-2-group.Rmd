@@ -3,6 +3,15 @@ title: "Methods 4 -- Portfolio Assignment 2"
 output: html_notebook
 ---
 
+_Note: Initials were added to the document as required but group work was done equally together._
+
+## Study group 8
+
+- Kristian Villebro (KV): 202005289
+- Luke Ring (LR): 202009983
+- Vyara Krasteva (VK): 202005673
+
+
 - *Type:* Group assignment
 - *Due:* 3 April 2022, 23:59
 
@@ -28,7 +37,7 @@ DAGGIN, simulating and modelling.
 
 Looking forward !
 
-## Task 1: The DAG
+## Task 1: The DAG (KV)
 
 \- **Come up with an** incredibly interesting and scientifically
 important made-up **example** for a phenomenon to investigate. Decide on
@@ -59,7 +68,7 @@ set.seed(42)
 ```
 
 
-```{r making_the_DAG}	
+```{r making_the_DAG}
 #Make a Dag
 Dag <- dagitty(
   "dag {
@@ -119,7 +128,7 @@ for (dag in equivDAGs) {
 }
 ```
 
-## Task 2: The data
+## Task 2: The data (LR)
 
 \- **Simulate some data that fits the DAG.** There are many ways to do
 this. A simple way is just to sample one variable from a normal
@@ -170,7 +179,7 @@ str(df$Activity)
 ```
 
 
-## Task 3: Statistics
+## Task 3: Statistics (VK)
 
 \- Run **multiple linear regression**s to **test the conditional
 independencies** **implied by your DAG**. Make sure to avoid backdoor
@@ -265,7 +274,7 @@ We only tested two of the conditional independencies implied by our DAG, as we c
 
 The output of the regressions for m1 - testing the conditional independence of Activity and Attractiveness - showed an effect size close to zero implying conditional independency, likewise for m2 which tested the conditional independency of charm and libido given attractiveness.
 
-## Task 4: Messing it up
+## Task 4: Messing it up (KV)
 
 \- Try and **deliberately have an open back door path** and see if you
 can get wrong inference.

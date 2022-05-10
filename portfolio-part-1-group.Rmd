@@ -4,6 +4,16 @@ output:
     html_notebook: default
 ---
 
+
+_Note: Initials were added to the document as required but group work was done equally together._
+
+## Study group 8
+
+- Kristian Villebro (KV): 202005289
+- Luke Ring (LR): 202009983
+- Vyara Krasteva (VK): 202005673
+
+
 - *Type:* Group assignment
 - *Due:* 6 March 2022, 23:59
 
@@ -23,7 +33,7 @@ Trigger alert for anyone who has recently experienced a pandemic.
 
 # Pandemic Exercises
 
-## 1) Testing Efficiency
+## 1) Testing Efficiency (KV)
 
 Imagine there was a global pandemic.
 
@@ -143,7 +153,7 @@ round(mean(samples_pos_uninfected), 2)
 ```
 While we could use the chain mode (most frequent), we decided to take the mean and give them the values of 54% chance of getting a positive test result given that you're infected and 36% chance of getting a positive test given you are not infected.
 
-## 2) Dark Cellars
+## 2) Dark Cellars (LR)
 
 Months pass. Thousands of people are tested by the wizards of the world governments. A fancy company analyses the data, and determine, with very high confidence they say, the probability of testing positive with the current test. They give the following point estimates:
 
@@ -264,7 +274,7 @@ Months pass. Thousands of people are tested by the wizards of the world governme
 >
 > Based on calculated expected loss, we decide to say we are positive, as answering negative has a higher expected loss.
 
-## 3) Causal Models
+## 3) Causal Models (VK)
 
 A problem from our textbook *Statistical Rethinking (2nd ed.)* (p. 160):
 
