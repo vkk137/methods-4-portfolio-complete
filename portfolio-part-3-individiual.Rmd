@@ -1,0 +1,472 @@
+---
+title: "Methods 4 -- Portfolio Assignment 3"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r setup}
+library(tidyverse)
+library(rethinking)
+library(dagitty)
+library(ggdag)
+library(truncnorm)
+library(LaplacesDemon)
+```
+
+- *Type:* Individual assignment
+- *Due:* 1 May 2022, 23:59
+
+Hey again CogSci\'s :)
+
+So now for the last of the three portfolios :)
+
+This time it\'s an individual one. We will build a workflow and use it
+to analyze a new dataset.
+
+There are seven tasks below. As usual, handing in as a markdown is nice
+:)
+
+## 1. Get familiar with the data
+
+It is a dataset containing information about the people who were on the
+Titanic when it sank. Our job is to find out why some survived, and
+others didn\'t.
+
+The data is downloaded from [Kaggle](https://www.kaggle.com/).
+You can get it on this link:
+
+[https://www.kaggle.com/competitions/titanic/data](https://www.kaggle.com/competitions/titanic/data)
+
+But if you don\'t want to make an account there, we have also put it in the
+`data/` directory in the repository :) It's entirely fine for you to use the
+combined training and test datasets for your analysis, but if you like, you can
+develop your analysis on the training set and validate it on the test set.
+(Bonus question: what are the advantages and disadvantages of either approach?)
+
+Get an overview of which variables are in the dataset.
+
+```{r overview_data}
+# read in data
+data_train <- read.csv("data/titanic_train.csv")
+data_test <- read.csv("data/titanic_test.csv")
+head(data_train)
+summary(data_train)
+```
+
+| Variable | Type |
+|----------|------|
+| Survived | int (1/0) |
+| Pclass | int (1/2/3) |
+| Name | str |
+| Sex | male/female |
+| Age | int |
+| SibSp | int number of siblings or spouses on board |
+| Parch | int number of parents / children on board |
+| Ticket | str |
+| Fare | float |
+| Cabin | str |
+| Embarked | char, port C = Cherbourg, Q = Queenstown, S = Southampton |
+
+
+Do some quick plots to get a sense of how the data looks.
+
+  
+```{r plots}
+data_train$Survived <- as.logical(data_train$Survived)
+
+data_train$Pclass <- as.factor(data_train$Pclass)
+data_test$Pclass <- as.factor(data_test$Pclass)
+
+data_train$Sex <- as.factor(data_train$Sex)
+data_test$Sex <- as.factor(data_test$Sex)
+
+
+
+# plot data
+ggplot(
+  data_train,
+  aes(
+    x = Sex,
+    y = Survived,
+    color = Pclass)) +
+  geom_jitter()
+
+# plot variables
+ggplot(
+    data_train,
+    aes(x = Survived, fill = Survived)
+  ) +
+  geom_bar() +
+  geom_text(aes(
+      group = Survived, label = after_stat(count), vjust = 2),
+      stat = "count", position = position_fill()) +
+  labs(
+    title = "Survived",
+  )
+
+ggplot(
+    data_train,
+    aes(x = Pclass)
+  ) +
+  geom_bar(aes(group = Survived, fill = Survived)) +
+  geom_text(aes(
+      group = Survived, label = after_stat(count)), vjust = 2,
+    stat = "count", position = "stack") +
+  geom_text(aes(
+      label = after_stat(paste("Total: ", count))), vjust = 2,
+      stat = "count", position = position_fill()) +
+  labs(
+    title = "Passenger Class",
+  )
+
+ggplot(
+    data_train,
+    aes(x = Sex)
+  ) +
+  geom_bar(aes(group = Survived, fill = Survived)) +
+  geom_text(aes(
+      group = Survived,
+      label = after_stat(count)), vjust = 2,
+    stat = "count", position = "stack") +
+  geom_text(aes(
+      label = after_stat(paste("Total: ", count))), vjust = 2,
+      stat = "count", position = position_fill()) +
+  labs(
+    title = "Passenger Sex",
+  )
+
+data_train %>%
+  filter(!is.na(Age)) %>%
+  ggplot(
+    aes(x = Age)
+  ) +
+  geom_point(
+    aes(
+      group = Survived,
+      color = Survived,
+      size = after_stat(count)),
+    stat = "count", na.rm = TRUE) +
+  labs(
+    title = "Passenger survival by Age",
+  )
+
+data_train %>%
+  filter(!is.na(Age)) %>%
+  group_by(Age, Survived) %>%
+  summarise(freq = n(), Age = Age, Survived = Survived, .groups = "keep") %>%
+  ggplot(
+    aes(x = Age, y = freq)
+  ) +
+  geom_smooth(aes(color = Survived), method = loess, formula = y ~ x) +
+  labs(
+    title = "Frequency plot of passenger survival by age",
+  )
+
+data_train %>%
+  filter(!is.na(Age)) %>%
+  group_by(Age) %>%
+  summarise(
+    Age = Age,
+    survival_prop = sum(Survived) / n(),
+    .groups = "keep") %>%
+  ggplot(
+    aes(x = Age, y = survival_prop)
+  ) +
+  geom_smooth(method = loess, formula = y ~ x) +
+  labs(
+    title = "Proportional passenger survival by Age",
+  )
+
+hist(data_train$Age, breaks = 80)
+
+```
+
+> Visual inspection of the data shows that proportionally more female passengers survived than males, and it seems like proportionally the highest death rate comes from third class passengers (also by total numbers). It also seems like including age would be relevant, also just by reasoning based on the cultural meme of "saving the women and children".
+> 
+> It's possible that passenger class has an effect on age (i.e. it's possible that passengers of a certain class were more likely to bring children, or people of a certain age are more likely to be able to afford first class tickets).
+>
+> Let's briefly look at the data to see if the idea is supported.
+
+```{r class_and_age}
+
+
+by_age_pclass <- data_train %>%
+  filter(!is.na(Age))
+
+by_age_pclass %>%
+  ggplot(aes(x = Age, group = Pclass, fill = Pclass)) +
+  stat_bin(
+    binwidth = 5,
+    geom = "bar",
+    position = position_dodge()
+  ) +
+  stat_bin(
+    aes(label = ..count..),
+    binwidth = 5,
+    geom = "text",
+    position = position_dodge(width = 5), vjust = -1
+  )
+
+passengers_by_class <- c(
+  1 / nrow(by_age_pclass[by_age_pclass$Pclass == 1, ]),
+  1 / nrow(by_age_pclass[by_age_pclass$Pclass == 2, ]),
+  1 / nrow(by_age_pclass[by_age_pclass$Pclass == 3, ]))
+  
+by_age_pclass %>%
+  mutate(
+    bin = cut(Age, breaks = seq(0, 85, by = 5)),
+    p_by_class = passengers_by_class[Pclass]) %>%
+  group_by(bin, Pclass) %>%
+  summarise(
+    bin = bin,
+    Pclass = Pclass,
+    Age = Age,
+    n_prop_c = sum(p_by_class), .groups = "drop") %>%
+  group_by(bin) %>%
+  summarise(
+    bin = bin,
+    Pclass = Pclass,
+    Age = Age,
+    n_prop_a = n_prop_c / sum(n_prop_c), .groups = "drop") %>%
+  group_by(bin, Pclass) %>%
+  summarise(
+    bin = bin,
+    Pclass = Pclass,
+    Age = Age,
+    n_prop_ac = sum(n_prop_a), .groups = "drop") %>%
+  ggplot(
+    aes(x = bin, y = n_prop_ac, fill = Pclass, color = Pclass)
+  ) +
+  geom_col(position = position_dodge()) +
+  # geom_text(aes(label = round(..y.., 2)), position = position_dodge(width = 5)) +
+  labs(
+    title = "Passenger class by Age (proportional)",
+  )
+
+```
+
+> So it does seem at least with the 40+ passengers, more were first class, and the inverse for below 40.
+> Roughly eyeballing it you could say the mean age of first class passengers is around 40, second class: 35, and the mean age of third class passengers is around 30.
+>
+
+## 2. Choose an estimand / outcome
+
+We recommend that you choose whether the person survived as the
+outcome - it\'s (a bit) interesting, and it forces you to do regression
+with a binary outcome :)
+
+However, it\'s okay to do something else if you really want to :)
+
+> `Survived` is the outcome we are trying to predict. 
+
+## 3. Make a scientific model (i.e., a DAG)
+
+Make a DAG that seems theoretically reasonable, and that includes some
+of the variables in the dataset. It can include unobserved variables
+too, if you want, but then you have to come up with them.
+
+You might have to return to this point later on ;)
+
+```{r dag}
+
+dagtanic <- dagitty(
+  "dag {
+    A -> S
+    Sx -> S
+    C -> S
+    A -> C
+  }"
+)
+tidy_dagtanic <- tidy_dagitty(dagtanic)
+
+ggdag(tidy_dagtanic, stylized = TRUE) +
+  theme_dag() +
+  geom_dag_edges_link(
+    arrow = grid::arrow(
+      length = grid::unit(16, "pt"),
+      type = "closed")) +
+  ggtitle("DAG of Titanic survival")
+
+ggdag_equivalent_dags(tidy_dagtanic, stylized = TRUE) +
+  theme_dag() +
+  geom_dag_edges_link(
+    arrow = grid::arrow(
+      length = grid::unit(16, "pt"),
+      type = "closed")) +
+  ggtitle("Equivalent DAGs")
+
+
+```
+
+## 4. Simulate data from the DAG
+
+Use some reasonable or expected parameter values.
+
+Use this to see if the DAG can give data that looks similar to what you
+have.
+
+Maybe plot the simulated data to see if it looks right.
+
+Also, this is one of those things which is nice to get comfy with :)
+
+```{r simulate}
+
+
+n_sim <- 1000
+
+s_age <- c(
+  rtruncnorm(n_sim / 16, a = 0, b = 80, mean = 0, sd = 3),
+  rtruncnorm(n_sim + 1 - n_sim / 16, a = 0, b = 80, mean = 30, sd = 15))
+
+b_age_pclass <- 0.1
+
+age_to_class_probabilities <- function(age) {
+  if (age < 40) {
+    c(0.2, 0.1, 0.7)
+  } else {
+    c(0.8, 0.1, 0.1)
+  }
+}
+
+b_pclass <- c(0.22, 0.18, 0.6)
+pr_age_pclass <- matrix(sapply(s_age, age_to_class_probabilities),
+  ncol = 3, nrow = n_sim)
+
+p_age_pclass <- matrix(
+  c(
+    # base probability of class plus probability of class  by age
+    (1 - b_age_pclass) * b_pclass[1] + b_age_pclass * pr_age_pclass[, 1],
+    (1 - b_age_pclass) * b_pclass[2] + b_age_pclass * pr_age_pclass[, 2],
+    (1 - b_age_pclass) * b_pclass[3] + b_age_pclass * pr_age_pclass[, 3]
+  ),
+  ncol = 3, nrow = n_sim)
+
+p_age_pclass <- p_age_pclass / rowSums(p_age_pclass)
+
+s_pclass <- rcat(n_sim, p = p_age_pclass)
+
+# as age increases, less likely to survive (in general)
+p_age_survival <- 1 - (0.2 + s_age * 1 / 80 * 0.7)
+
+
+
+s_sex <- rbinom(n_sim, p = 0.65, size = 1) + 1
+
+# b_sex <-  c(0.4, 0.2)
+
+p_survival <- matrix(c(0.9, 0.5, 0.8, 0.3, 0.7, 0.1), nrow = 2, ncol = 3)
+
+s_survival <- rbern(n_sim, p_survival[s_sex, s_pclass] * p_age_survival)
+
+hist(s_age, breaks = 80)
+hist(s_sex)
+hist(s_pclass)
+hist(s_survival)
+
+
+d_sim <- list(
+  Age = s_age,
+  Sex = s_sex,
+  Pclass = s_pclass,
+  Survived = s_survival
+)
+
+```
+
+## 5. Make a statistical model
+
+The whole thing :)
+
+Include relevant predictors.
+
+Remember to check for adjustment sets.
+
+Figure out how to deal with binary and categorical variables.
+
+Include interactions maybe.
+
+Set priors. Use prior predictive checks for that.
+
+Use MCMC to fit it. You can also try with quap and see if there\'s a
+difference.
+
+```{r model}
+
+set_ulam_cmdstan(TRUE)
+d <- list(
+  Age = by_age_pclass$Age,
+  Pclass = as.integer(by_age_pclass$Pclass),
+  Survived = as.integer(by_age_pclass$Survived),
+  Sex = as.integer(by_age_pclass$Sex))
+
+m_v <- alist(
+  Survived ~ dbinom(1, p),
+  logit(p) <- a + b_cls[Pclass] + b_sex[Sex] + b_age * Age,
+  a ~ dnorm(0, 1.5),
+  b_cls[Pclass] ~ dnorm(0, 0.5),
+  b_sex[Sex] ~ dnorm(0, 0.5),
+  b_age ~ dnorm(-0.05, 0.01)
+)
+
+m1 <- ulam(
+  m_v, data = d, chains = 8, cores = 8
+)
+
+m1
+
+precis(m1, depth = 2)
+
+traceplot(m1)
+trankplot(m1)
+
+m1_sim <- ulam(
+  m_v, data = d_sim, chains = 8, cores = 8
+)
+
+m1_sim
+
+precis(m1_sim, depth = 2)
+
+traceplot(m1_sim)
+trankplot(m1_sim)
+
+
+```
+
+## 6. Test the statistical model on the simulated data
+
+Test that the conditional independencies implied by the DAG are also in
+the simulated data. If they aren\'t, something\'s probably wrong.
+
+## 7. Assess whether the DAG is compatible with the data
+
+Check the conditional independencies implied by the DAG are in the real
+data.
+
+Remember adjustment sets. If they aren\'t, make a new DAG.
+
+## 8. Do model comparison
+
+Try out some different priors.
+
+Try with and without interactions.
+
+Use Cross-Validation, PSIS and/or WAIC.
+
+Use posterior predictive checks to make sure that the models don\'t make
+crazy predictions.
+
+Select a model that you find reasonable. If none are, make a new one.
+
+## 9. Use the statistical model to do inference
+
+Time to answer the question: which things determine whether people died
+at Titanic? (or maybe you made some other question that\'s also okay).
+
+What are the effect sizes? What are their directions?
+
+Make a tiny conclusion here. Maybe try and give a theoretical reason for
+your results.
+
+And drink some tea or coffee :)
