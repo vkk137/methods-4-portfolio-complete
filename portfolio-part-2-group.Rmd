@@ -55,6 +55,7 @@ activity that both parties engage in on the date.
 
 library(rethinking)
 library(dagitty)
+set.seed(42)
 ```
 
 
@@ -76,13 +77,15 @@ drawdag(Dag)
 \- Find **elemental forms of variable relations** in the DAG
 (i.e., forks, pipes, colliders, and their descendants).
 
+In our imaginary DAG above, Date success is the Outcome variable which is influenced by a lot of variables. 
 
-In our simulated example above Date success is the Outcome variable and we use both type of Activity and Libido level as predictor variables.
-Starting from the left side on the DAG Libido is a pipe to Attractiveness, which is also a pipe that influences Charm.
-Then the Attractiveness level has a fork relationship to both Date success and Chemistry level, thus, creating a correlation between those two variables. 
-Chemistry level and the type of date Activity are both pipes that contribute to the overall level of Date Success.
-
-
+Starting from the right side of the DAG: 
+Libido is an independent variable. 
+Attractiveness is in a pipe from Lib->Attra->Charm. 
+Charm acts as a Fork, but is also part of a pipe. 
+Chemistry is in a pipe. 
+Activity is an independent variable. 
+Date_success is a collider.
 
 \- Find out **what variables to include (and not include)** in a
 multiple linear regression to avoid \'back door\' (AKA non-causal)
@@ -176,21 +179,51 @@ implied by your DAG, implying that the data and the DAG are compatible
 (if the linear model doesn\'t show the conditional independencies
 implied by the DAG, the data and the DAG doesn\'t fit).
 
-> Actv _||_ Attr
-> Actv _||_ Chrm
-> Actv _||_ Chms
-> **Actv _||_ Libd**
-> Attr _||_ Chms | Chrm
-> Attr _||_ Dt_s | Chrm
-> Chrm _||_ Libd | Attr
-> Chms _||_ Libd | Attr
-> Chms _||_ Libd | Chrm
-> Dt_s _||_ Libd | Attr
-> Dt_s _||_ Libd | Chrm
+> Actv \_||\_ Attr
+> Actv \_||\_ Chrm
+> Actv \_||\_ Chms
+> Actv \_||\_ Libd
+> Attr \_||\_ Chms | Chrm
+> Attr \_||\_ Dt_s | Chrm
+> Chrm \_||\_ Libd | Attr
+> Chms \_||\_ Libd | Attr
+> Chms \_||\_ Libd | Chrm
+> Dt_s \_||\_ Libd | Attr
+> Dt_s \_||\_ Libd | Chrm
+
   
 ```{r multiple_linear_regressions}
-# Make model predicting Date Success by Charm and Chemistry
+adjustmentSets(Dag,
+  exposure = "Activity",
+  outcome = "Libido")
+# test independence of Activity and Libido
 m1 <- quap(
+  alist(
+    Libido ~ dnorm(mu, sigma),
+    mu <- b_ACT*Activity,
+    b_ACT ~ dnorm(0, 1),
+    sigma ~ dexp(1)
+    ), data = df)
+precis(m1, depth = 2)
+
+
+adjustmentSets(Dag,
+  exposure = c("Attractiveness", "Libido"),
+  outcome = "Charm")
+# test independence of charm and libido given attractiveness
+m2 <- quap(
+  alist(
+    Charm ~ dnorm(mu, sigma),
+    mu <- b_ATTR*Attractiveness + b_LIB*Libido,
+    b_ATTR ~ dnorm(0, 1),
+    b_LIB ~ dnorm(0, 1),
+    sigma ~ dexp(1)
+    ), data = df)
+precis(m2, depth = 2)
+
+
+# Make model predicting Date Success by Charm and Chemistry
+m3 <- quap(
   alist(
     Date_success ~ dnorm(mu, sigma),
     mu <- a + b_ChaDS * Charm + b_CheDS * Chemistry,
@@ -200,10 +233,17 @@ m1 <- quap(
     sigma ~ dexp(1)
     ), data = df)
 
-precis(m1)
+precis(m3)
+
+# plot our priors and posteriors
+prior <- extract.prior(m3, n = 1e4)
+post <- extract.samples(m3)
+
+plot(precis(prior, 2), col.ci = "gray", xlim = c(-3, 3.5))
+plot(precis(post, 2), add = TRUE, pch = 16)
 
 # Make model predicting Date Success by Activity
-m2 <- quap(
+m4 <- quap(
   alist(
     Date_success ~ dnorm(mu, sigma),
     mu <- a[Activity],
@@ -211,55 +251,19 @@ m2 <- quap(
     sigma ~ dexp(1)
     ), data = df)
 
-precis(m2, depth = 2)
-
-# model predicting Date_success by Activity and Libido
-m3 <- quap(
-  alist(
-    Date_success ~ dnorm(mu, sigma),
-    mu <- a[Activity] + b_LAt * Libido,
-    a[Activity] ~ dnorm(0, 1),
-    b_LAt ~ dnorm(0, 0.7),
-    sigma ~ dexp(1)
-    ), data = df)
-
-
-precis(m3, depth = 2)
-
+precis(m4, depth = 2)
 # plot our priors and posteriors
-prior <- extract.prior(m3,n = 1e4)
-post <- extract.samples(m3)
+prior <- extract.prior(m4, n = 1e4)
+post <- extract.samples(m4)
 
 plot(precis(prior, 2), col.ci = "gray", xlim = c(-3, 3.5))
 plot(precis(post, 2), add = TRUE, pch = 16)
 
-# plot the data with the posterior mean
-plot(Date_success ~ Activity + Libido,
-  data = df,
-  type = "p",
-  main = "Date Success by Activity and Libido",
-  ann = TRUE,
-  axes = TRUE,
-  col = ifelse(Activity == 1, "darkgreen", "darkorange"),
-  frame.plot = TRUE,
-  pch = 19,
-  ylim = c(-8, 8),
-  xlim = c(-3, 3)
-)
-
-a1_map <- mean(post$a[, 1])
-a2_map <- mean(post$a[, 2])
-b_map <- mean(post$b_LAt)
-xbar <- mean(df$Activity + df$Libido)
-curve(a1_map + b_map * (x - xbar), add = TRUE, col = "darkgreen", lwd = 2)
-curve(a2_map + b_map * (x - xbar), add = TRUE, col = "darkorange", lwd = 2)
-legend(-3, 8,
-  legend = c("Bowling", "Dinner"),
-  fill = c("darkgreen", "darkorange"))
-
 ```
 
+We only tested two of the conditional independencies implied by our DAG, as we considered these ones sufficient enough to test it.
 
+The output of the regressions for m1 - testing the conditional independence of Activity and Attractiveness - showed an effect size close to zero implying conditional independency, likewise for m2 which tested the conditional independency of charm and libido given attractiveness.
 
 ## Task 4: Messing it up
 
@@ -291,7 +295,7 @@ precis(m1.1)
 
 ```
 As can be seeen in outcome, the model thinks the mean of b_CheDS 
-is 1.79 and with a SD of 0.10 seems pretty confident about it. 
+is 1.79 and with a SD of 0.08 seems pretty confident about it. 
 It is however pretty far off the true value of 1. 
 
 ```{r Making_a_wrong_DAG}
@@ -304,7 +308,7 @@ Wrong_Dag <- dagitty(
     Chemistry -> Attractiveness
     Attractiveness -> Libido
   }"
-) 
+)
 
 drawdag(Wrong_Dag)
 ```
