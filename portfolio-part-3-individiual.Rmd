@@ -781,16 +781,17 @@ compare(
   m5,
   n = 5000)
 
-compare(
-  m1,
-  m1_broad_priors,
-  m1_narrower_priors,
-  m1_narrowest_priors,
-  m3,
-  m4,
-  m5,
-  func = PSIS,
-  n = 5000)
+# PSIS takes 10+ minutes and gave exactly the same results as WAIC
+# compare(
+#   m1,
+#   m1_broad_priors,
+#   m1_narrower_priors,
+#   m1_narrowest_priors,
+#   m3,
+#   m4,
+#   m5,
+#   func = PSIS,
+#   n = 5000)
 ```
 
 > Model comparison shows our most complex model has the best results (m5, which includes modelling intercepts for combinations of passenger class and sex).
