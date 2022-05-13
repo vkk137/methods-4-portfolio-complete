@@ -13,6 +13,8 @@ library(ggdag)
 library(truncnorm)
 library(LaplacesDemon)
 n_cores <- parallel::detectCores()
+n_chains <- 8
+n_iter <- 3000
 options(mc.cores = n_cores)
 
 # set random seed for reproducibility
@@ -437,7 +439,8 @@ m_v <- alist(
 m1 <- ulam(
   m_v,
   data = d,
-  chains = 8,
+  chains = n_chains,
+  iter = n_iter,
   cores = n_cores,
   log_lik = TRUE,
   messages = FALSE,
@@ -487,7 +490,8 @@ the simulated data. If they aren\'t, something\'s probably wrong.
 m1_sim <- ulam(
   m_v,
   data = d_sim,
-  chains = 8,
+  chains = n_chains,
+  iter = n_iter,
   cores = n_cores,
   log_lik = TRUE,
   messages = FALSE,
@@ -541,7 +545,8 @@ m2_Sx_C <- ulam(
     b_cls[Pclass] ~ dnorm(0, 1)
   ),
   data = d_sim_S,
-  chains = 8,
+  chains = n_chains,
+  iter = n_iter,
   cores = n_cores,
   log_lik = TRUE,
   messages = FALSE,
@@ -574,7 +579,8 @@ m2_A_Sx <- ulam(
     sigma ~ dexp(1)
   ),
   data = d,
-  chains = 8,
+  chains = n_chains,
+  iter = n_iter,
   cores = n_cores,
   log_lik = TRUE,
   messages = FALSE,
@@ -597,7 +603,8 @@ m2_Sx_C <- ulam(
     b_cls[Pclass] ~ dnorm(0, 1)
   ),
   data = d_S,
-  chains = 8,
+  chains = n_chains,
+  iter = n_iter,
   cores = n_cores,
   log_lik = TRUE,
   messages = FALSE,
@@ -641,7 +648,8 @@ m1_broad_priors <-  ulam(
     b_age ~ dnorm(0, 10)
   ),
   data = d,
-  chains = 8,
+  chains = n_chains,
+  iter = n_iter,
   cores = n_cores,
   log_lik = TRUE,
   messages = FALSE,
@@ -661,7 +669,8 @@ m1_narrower_priors <-  ulam(
     b_age ~ dnorm(0, 0.25)
   ),
   data = d,
-  chains = 8,
+  chains = n_chains,
+  iter = n_iter,
   cores = n_cores,
   log_lik = TRUE,
   messages = FALSE,
@@ -681,7 +690,8 @@ m1_narrowest_priors <-  ulam(
     b_age ~ dnorm(0, 0.1)
   ),
   data = d,
-  chains = 8,
+  chains = n_chains,
+  iter = n_iter,
   cores = n_cores,
   log_lik = TRUE,
   messages = FALSE,
@@ -708,7 +718,8 @@ m3 <- ulam(
     b_sex[Sex] ~ dnorm(0, 1)
   ),
   data = d,
-  chains = 8,
+  chains = n_chains,
+  iter = n_iter,
   cores = n_cores,
   log_lik = TRUE,
   messages = FALSE,
@@ -728,7 +739,8 @@ m4 <- ulam(
     b_age ~ dnorm(0, 1)
   ),
   data = d,
-  chains = 8,
+  chains = n_chains,
+  iter = n_iter,
   cores = n_cores,
   log_lik = TRUE,
   messages = FALSE,
@@ -747,7 +759,8 @@ m5 <- ulam(
     b_age ~ dnorm(0, 1)
   ),
   data = d,
-  chains = 8,
+  chains = n_chains,
+  iter = n_iter,
   cores = n_cores,
   log_lik = TRUE,
   messages = FALSE,
@@ -758,9 +771,24 @@ precis(m5, depth = 3)
 precis_plot(precis(m5, depth = 3))
 
 
-compare(m1, m1_broad_priors, m1_narrower_priors, m1_narrowest_priors, m3, m4, m5)
-compare(m1, m1_broad_priors, m1_narrower_priors, m1_narrowest_priors, m3, m4, m5, func = PSIS)
+compare(
+  m1,
+  m1_broad_priors,
+  m1_narrower_priors,
+  m1_narrowest_priors,
+  m3,
+  m4,
+  m5)
 
+compare(
+  m1,
+  m1_broad_priors,
+  m1_narrower_priors,
+  m1_narrowest_priors,
+  m3,
+  m4,
+  m5,
+  func = PSIS)
 ```
 
 > Model comparison shows our most complex model has the best results (m5, which includes modelling intercepts for combinations of passenger class and sex).
