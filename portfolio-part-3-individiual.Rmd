@@ -12,7 +12,15 @@ library(dagitty)
 library(ggdag)
 library(truncnorm)
 library(LaplacesDemon)
+n_cores <- parallel::detectCores()
+options(mc.cores = n_cores)
+
+# set random seed for reproducibility
+set.seed(133742)
+
 ```
+
+## Luke Ring: 202009983
 
 - *Type:* Individual assignment
 - *Due:* 1 May 2022, 23:59
@@ -239,7 +247,6 @@ by_age_pclass %>%
     aes(x = bin, y = n_prop_ac, fill = Pclass, color = Pclass)
   ) +
   geom_col(position = position_dodge()) +
-  # geom_text(aes(label = round(..y.., 2)), position = position_dodge(width = 5)) +
   labs(
     title = "Passenger class by Age (proportional)",
   )
@@ -296,8 +303,15 @@ ggdag_equivalent_dags(tidy_dagtanic, stylized = TRUE) +
       type = "closed")) +
   ggtitle("Equivalent DAGs")
 
+adjustmentSets(dagtanic, exposure = c("C", "Sx"), outcome = "S")
+
+adjustmentSets(dagtanic, exposure = c("C", "Sx", "A"), outcome = "S")
+
+impliedConditionalIndependencies(dagtanic)
 
 ```
+
+> Based on the dag and running adjustmentSets, we should use Passenger Class, Sex and Age with the outcome of Survived. We only have implied conditional independencies for Age and Sex and Passenger class and Sex.
 
 ## 4. Simulate data from the DAG
 
@@ -349,30 +363,41 @@ s_pclass <- rcat(n_sim, p = p_age_pclass)
 # as age increases, less likely to survive (in general)
 p_age_survival <- 1 - (0.2 + s_age * 1 / 80 * 0.7)
 
-
-
 s_sex <- rbinom(n_sim, p = 0.65, size = 1) + 1
 
-# b_sex <-  c(0.4, 0.2)
+# sex effect on survival F, M
+bSxS <- c(0.75, 0.2)
+# class effect on survival, 1, 2, 3
+bCS <- c(0.65, 0.5, 0.25)
 
-p_survival <- matrix(c(0.9, 0.5, 0.8, 0.3, 0.7, 0.1), nrow = 2, ncol = 3)
+bSxCS <- c(
+  (bSxS[1] + bCS[1]) / sum(bSxS, bCS),
+  (bSxS[2] + bCS[1]) / sum(bSxS, bCS),
+  (bSxS[1] + bCS[2]) / sum(bSxS, bCS),
+  (bSxS[2] + bCS[2]) / sum(bSxS, bCS),
+  (bSxS[1] + bCS[3]) / sum(bSxS, bCS),
+  (bSxS[2] + bCS[3]) / sum(bSxS, bCS)
+)
+
+p_survival <- matrix(bSxCS, nrow = 2, ncol = 3)
 
 s_survival <- rbern(n_sim, p_survival[s_sex, s_pclass] * p_age_survival)
 
-hist(s_age, breaks = 80)
+dens(s_age, adj = 0.1)
 hist(s_sex)
 hist(s_pclass)
 hist(s_survival)
 
-
 d_sim <- list(
-  Age = s_age,
+  Age = standardize(s_age),
   Sex = s_sex,
   Pclass = s_pclass,
   Survived = s_survival
 )
 
 ```
+
+> This simulated data looks pretty good, it seems to mirror the real data fairly well.
 
 ## 5. Make a statistical model
 
@@ -391,11 +416,11 @@ Set priors. Use prior predictive checks for that.
 Use MCMC to fit it. You can also try with quap and see if there\'s a
 difference.
 
-```{r model}
-
+```{r model, warning=FALSE}
+# better apparently, for newer cmdstan versions.
 set_ulam_cmdstan(TRUE)
 d <- list(
-  Age = by_age_pclass$Age,
+  Age = standardize(by_age_pclass$Age),
   Pclass = as.integer(by_age_pclass$Pclass),
   Survived = as.integer(by_age_pclass$Survived),
   Sex = as.integer(by_age_pclass$Sex))
@@ -403,41 +428,133 @@ d <- list(
 m_v <- alist(
   Survived ~ dbinom(1, p),
   logit(p) <- a + b_cls[Pclass] + b_sex[Sex] + b_age * Age,
-  a ~ dnorm(0, 1.5),
-  b_cls[Pclass] ~ dnorm(0, 0.5),
-  b_sex[Sex] ~ dnorm(0, 0.5),
-  b_age ~ dnorm(-0.05, 0.01)
+  a ~ dnorm(-0.2, 1),
+  b_cls[Pclass] ~ dnorm(0, 1),
+  b_sex[Sex] ~ dnorm(0, 1),
+  b_age ~ dnorm(-0.1, 1)
 )
 
 m1 <- ulam(
-  m_v, data = d, chains = 8, cores = 8
+  m_v,
+  data = d,
+  chains = 8,
+  cores = n_cores,
+  log_lik = TRUE,
+  messages = FALSE,
+  refresh = 0
 )
-
-m1
 
 precis(m1, depth = 2)
+precis_plot(precis(m1, depth = 2))
 
-traceplot(m1)
-trankplot(m1)
-
-m1_sim <- ulam(
-  m_v, data = d_sim, chains = 8, cores = 8
-)
-
-m1_sim
-
-precis(m1_sim, depth = 2)
-
-traceplot(m1_sim)
-trankplot(m1_sim)
+trankplot(m1,
+  pars = c(
+    "a",
+    "b_cls[1]",
+    "b_cls[2]",
+    "b_cls[3]",
+    "b_sex[1]",
+    "b_sex[2]",
+    "b_age"))
 
 
+# take a look at our priors
+pr <- extract.prior(m1, refresh = 0)
+
+pr_p <- link(m1, data = d, post = pr)
+
+pr_p_m <- rowMeans(pr_p)
+p <- inv_logit(pr_p_m)
+dens(p, adj = 0.1)
 ```
+
+> As found in section 3, if we predict survival by class and age we should not have any backdoor paths according to our dag.
+> The priors look good, initially I tried to use more informed priors but it got messy quickly, I think it seems like an ok balance.
 
 ## 6. Test the statistical model on the simulated data
 
 Test that the conditional independencies implied by the DAG are also in
 the simulated data. If they aren\'t, something\'s probably wrong.
+
+> The implied conditional independencies found in our dag were:
+> 
+> A \_||\_ Sx
+> C \_||\_ Sx
+
+```{r test_sim, warning=FALSE}
+# first lest run our model on the simulated data
+
+m1_sim <- ulam(
+  m_v,
+  data = d_sim,
+  chains = 8,
+  cores = n_cores,
+  log_lik = TRUE,
+  messages = FALSE,
+  refresh = 0
+)
+
+precis(m1_sim, depth = 2)
+precis_plot(precis(m1_sim, depth = 2))
+
+trankplot(m1_sim,
+  pars = c(
+    "a",
+    "b_cls[1]",
+    "b_cls[2]",
+    "b_cls[3]",
+    "b_sex[1]",
+    "b_sex[2]",
+    "b_age"))
+
+
+# checking independence of age and sex
+m2_A_Sx <- ulam(
+  alist(
+    Age ~ dnorm(mu, sigma),
+    mu <- a + b_sex[Sex],
+    a ~ dnorm(0, 1),
+    b_sex[Sex] ~ dnorm(0, 1),
+    sigma ~ dexp(1)
+  ),
+  data = d_sim,
+  chains = 8,
+  cores = n_cores,
+  log_lik = TRUE,
+  messages = FALSE,
+  refresh = 0
+)
+
+precis(m2_A_Sx, depth = 2)
+precis_plot(precis(m2_A_Sx, depth = 2))
+
+# outcome is expected to be [0,1]
+d_sim_S <- d_sim
+d_sim_S$Sex <- d_sim_S$Sex - 1
+
+# checking independence of sex and class
+m2_Sx_C <- ulam(
+  alist(
+    Sex ~ dbinom(1, p),
+    logit(p) <- a + b_cls[Pclass],
+    a ~ dnorm(0, 1),
+    b_cls[Pclass] ~ dnorm(0, 1)
+  ),
+  data = d_sim_S,
+  chains = 8,
+  cores = n_cores,
+  log_lik = TRUE,
+  messages = FALSE,
+  refresh = 0
+)
+
+precis(m2_Sx_C, depth = 2)
+precis_plot(precis(m2_Sx_C, depth = 2))
+
+```
+
+> Both conditional independencies stand in the simulated data. Running the model on the simulated data also gives us a healthy looking chain on inspection (chain 1).
+
 
 ## 7. Assess whether the DAG is compatible with the data
 
@@ -445,6 +562,57 @@ Check the conditional independencies implied by the DAG are in the real
 data.
 
 Remember adjustment sets. If they aren\'t, make a new DAG.
+
+```{r test_real, warning=FALSE}
+# checking independence of age and sex
+m2_A_Sx <- ulam(
+  alist(
+    Age ~ dnorm(mu, sigma),
+    mu <- a + b_sex[Sex],
+    a ~ dnorm(0, 1),
+    b_sex[Sex] ~ dnorm(0, 1),
+    sigma ~ dexp(1)
+  ),
+  data = d,
+  chains = 8,
+  cores = n_cores,
+  log_lik = TRUE,
+  messages = FALSE,
+  refresh = 0
+)
+
+precis(m2_A_Sx, depth = 2)
+precis_plot(precis(m2_A_Sx, depth = 2))
+
+# outcome is expected to be [0,1]
+d_S <- d
+d_S$Sex <- d$Sex - 1
+
+# checking independence of sex and class
+m2_Sx_C <- ulam(
+  alist(
+    Sex ~ dbinom(1, p),
+    logit(p) <- a + b_cls[Pclass],
+    a ~ dnorm(0, 1),
+    b_cls[Pclass] ~ dnorm(0, 1)
+  ),
+  data = d_S,
+  chains = 8,
+  cores = n_cores,
+  log_lik = TRUE,
+  messages = FALSE,
+  refresh = 0
+)
+
+precis(m2_Sx_C, depth = 2)
+precis_plot(precis(m2_Sx_C, depth = 2))
+
+```
+
+> As with the simulated data, the conditional independencies stand in the real data, there may be some kind of extremely weak effect but with error bars so large there's no way to really tell, perhaps if there were more people or more Titanics we'd get enough data to pin it down. 
+>
+> With the C \_||\_ Sx we see that perhaps that classes have a different proportion of male and female passengers, but again it would be hard to say this would hold with more data, maybe rich bachelors were more likely to buy first class tickets?
+
 
 ## 8. Do model comparison
 
@@ -458,6 +626,145 @@ Use posterior predictive checks to make sure that the models don\'t make
 crazy predictions.
 
 Select a model that you find reasonable. If none are, make a new one.
+
+> first  let's investigate some different priors
+
+```{r model_comparison, warning=FALSE}
+
+m1_broad_priors <-  ulam(
+  alist(
+    Survived ~ dbinom(1, p),
+    logit(p) <- a + b_cls[Pclass] + b_sex[Sex] + b_age * Age,
+    a ~ dnorm(0, 10),
+    b_cls[Pclass] ~ dnorm(0, 10),
+    b_sex[Sex] ~ dnorm(0, 10),
+    b_age ~ dnorm(0, 10)
+  ),
+  data = d,
+  chains = 8,
+  cores = n_cores,
+  log_lik = TRUE,
+  messages = FALSE,
+  refresh = 0
+)
+
+precis(m1_broad_priors, depth = 2)
+precis_plot(precis(m1_broad_priors, depth = 2))
+
+m1_narrower_priors <-  ulam(
+  alist(
+    Survived ~ dbinom(1, p),
+    logit(p) <- a + b_cls[Pclass] + b_sex[Sex] + b_age * Age,
+    a ~ dnorm(0, 0.25),
+    b_cls[Pclass] ~ dnorm(0, 0.25),
+    b_sex[Sex] ~ dnorm(0, 0.25),
+    b_age ~ dnorm(0, 0.25)
+  ),
+  data = d,
+  chains = 8,
+  cores = n_cores,
+  log_lik = TRUE,
+  messages = FALSE,
+  refresh = 0
+)
+
+precis(m1_narrower_priors, depth = 2)
+precis_plot(precis(m1_narrower_priors, depth = 2))
+
+m1_narrowest_priors <-  ulam(
+  alist(
+    Survived ~ dbinom(1, p),
+    logit(p) <- a + b_cls[Pclass] + b_sex[Sex] + b_age * Age,
+    a ~ dnorm(0, 0.1),
+    b_cls[Pclass] ~ dnorm(0, 0.1),
+    b_sex[Sex] ~ dnorm(0, 0.1),
+    b_age ~ dnorm(0, 0.1)
+  ),
+  data = d,
+  chains = 8,
+  cores = n_cores,
+  log_lik = TRUE,
+  messages = FALSE,
+  refresh = 0
+)
+
+precis(m1_narrowest_priors, depth = 2)
+precis_plot(precis(m1_narrowest_priors, depth = 2))
+```
+
+> With much broader priors we can see that the model isn't able to find precise values for the parameters.
+>
+> With more narrow priors, as expected the standard deviation is lower, but we also see smaller differences in mean values. If the mean values are accurate this could be a good thing.
+
+  
+```{r model_comparison_cont, warning=FALSE}
+# include interaction between class and age
+m3 <- ulam(
+  alist(
+    Survived ~ dbinom(1, p),
+    logit(p) <- a + b_sex[Sex] + b_cls[Pclass] * Age,
+    a ~ dnorm(0, 1),
+    b_cls[Pclass] ~ dnorm(0, 1),
+    b_sex[Sex] ~ dnorm(0, 1)
+  ),
+  data = d,
+  chains = 8,
+  cores = n_cores,
+  log_lik = TRUE,
+  messages = FALSE,
+  refresh = 0
+)
+
+precis(m3, depth = 2)
+precis_plot(precis(m3, depth = 2))
+
+
+# simple prediction of survival from age
+m4 <- ulam(
+  alist(
+    Survived ~ dbinom(1, p),
+    logit(p) <- a + b_age * Age,
+    a ~ dnorm(0, 1),
+    b_age ~ dnorm(0, 1)
+  ),
+  data = d,
+  chains = 8,
+  cores = n_cores,
+  log_lik = TRUE,
+  messages = FALSE,
+  refresh = 0
+)
+
+precis(m4, depth = 2)
+precis_plot(precis(m4, depth = 2))
+
+# intercept per class and sex
+m5 <- ulam(
+  alist(
+    Survived ~ dbinom(1, p),
+    logit(p) <- a[Sex, Pclass] + b_age * Age,
+    matrix[Sex, Pclass]:a ~ normal(0, 1),
+    b_age ~ dnorm(0, 1)
+  ),
+  data = d,
+  chains = 8,
+  cores = n_cores,
+  log_lik = TRUE,
+  messages = FALSE,
+  refresh = 0
+)
+
+precis(m5, depth = 3)
+precis_plot(precis(m5, depth = 3))
+
+
+compare(m1, m1_broad_priors, m1_narrower_priors, m1_narrowest_priors, m3, m4, m5)
+compare(m1, m1_broad_priors, m1_narrower_priors, m1_narrowest_priors, m3, m4, m5, func = PSIS)
+
+```
+
+> Model comparison shows our most complex model has the best results (m5, which includes modelling intercepts for combinations of passenger class and sex).
+
 
 ## 9. Use the statistical model to do inference
 
