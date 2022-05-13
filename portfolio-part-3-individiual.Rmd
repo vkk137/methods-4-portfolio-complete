@@ -778,7 +778,8 @@ compare(
   m1_narrowest_priors,
   m3,
   m4,
-  m5)
+  m5,
+  n = 5000)
 
 compare(
   m1,
@@ -788,7 +789,8 @@ compare(
   m3,
   m4,
   m5,
-  func = PSIS)
+  func = PSIS,
+  n = 5000)
 ```
 
 > Model comparison shows our most complex model has the best results (m5, which includes modelling intercepts for combinations of passenger class and sex).
