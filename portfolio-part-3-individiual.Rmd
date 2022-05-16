@@ -5,13 +5,14 @@ output:
     df_print: paged
 ---
 
-```{r setup}
+```{r setup, echo=FALSE}
 library(tidyverse)
+library(LaplacesDemon)
 library(rethinking)
 library(dagitty)
 library(ggdag)
 library(truncnorm)
-library(LaplacesDemon)
+
 n_cores <- parallel::detectCores()
 n_chains <- 8
 n_iter <- 3000
@@ -19,6 +20,8 @@ options(mc.cores = n_cores)
 
 # set random seed for reproducibility
 set.seed(133742)
+options(digits=3)
+knitr::opts_chunk(fig.width = 10, warning = FALSE)
 
 ```
 
@@ -419,8 +422,10 @@ Use MCMC to fit it. You can also try with quap and see if there\'s a
 difference.
 
 ```{r model, warning=FALSE}
-# better apparently, for newer cmdstan versions.
-set_ulam_cmdstan(TRUE)
+# cmdstan caused an issue with later tidybayes
+set_ulam_cmdstan(FALSE)
+rstan_options(auto_write = TRUE)
+
 d <- list(
   Age = standardize(by_age_pclass$Age),
   Pclass = as.integer(by_age_pclass$Pclass),
@@ -428,7 +433,7 @@ d <- list(
   Sex = as.integer(by_age_pclass$Sex))
 
 m_v <- alist(
-  Survived ~ dbinom(1, p),
+  Survived ~ dbern(p),
   logit(p) <- a + b_cls[Pclass] + b_sex[Sex] + b_age * Age,
   a ~ dnorm(-0.2, 1),
   b_cls[Pclass] ~ dnorm(0, 1),
@@ -539,7 +544,7 @@ d_sim_S$Sex <- d_sim_S$Sex - 1
 # checking independence of sex and class
 m2_Sx_C <- ulam(
   alist(
-    Sex ~ dbinom(1, p),
+    Sex ~ dbern(p),
     logit(p) <- a + b_cls[Pclass],
     a ~ dnorm(0, 1),
     b_cls[Pclass] ~ dnorm(0, 1)
@@ -597,7 +602,7 @@ d_S$Sex <- d$Sex - 1
 # checking independence of sex and class
 m2_Sx_C <- ulam(
   alist(
-    Sex ~ dbinom(1, p),
+    Sex ~ dbern(p),
     logit(p) <- a + b_cls[Pclass],
     a ~ dnorm(0, 1),
     b_cls[Pclass] ~ dnorm(0, 1)
@@ -640,7 +645,7 @@ Select a model that you find reasonable. If none are, make a new one.
 
 m1_broad_priors <-  ulam(
   alist(
-    Survived ~ dbinom(1, p),
+    Survived ~ dbern(p),
     logit(p) <- a + b_cls[Pclass] + b_sex[Sex] + b_age * Age,
     a ~ dnorm(0, 10),
     b_cls[Pclass] ~ dnorm(0, 10),
@@ -653,7 +658,9 @@ m1_broad_priors <-  ulam(
   cores = n_cores,
   log_lik = TRUE,
   messages = FALSE,
-  refresh = 0
+  refresh = 0,
+  # default max treedepth (10) for this model results in errors
+  control = list(max_treedepth = 20)
 )
 
 precis(m1_broad_priors, depth = 2)
@@ -661,7 +668,7 @@ precis_plot(precis(m1_broad_priors, depth = 2))
 
 m1_narrower_priors <-  ulam(
   alist(
-    Survived ~ dbinom(1, p),
+    Survived ~ dbern(p),
     logit(p) <- a + b_cls[Pclass] + b_sex[Sex] + b_age * Age,
     a ~ dnorm(0, 0.25),
     b_cls[Pclass] ~ dnorm(0, 0.25),
@@ -682,7 +689,7 @@ precis_plot(precis(m1_narrower_priors, depth = 2))
 
 m1_narrowest_priors <-  ulam(
   alist(
-    Survived ~ dbinom(1, p),
+    Survived ~ dbern(p),
     logit(p) <- a + b_cls[Pclass] + b_sex[Sex] + b_age * Age,
     a ~ dnorm(0, 0.1),
     b_cls[Pclass] ~ dnorm(0, 0.1),
@@ -700,6 +707,7 @@ m1_narrowest_priors <-  ulam(
 
 precis(m1_narrowest_priors, depth = 2)
 precis_plot(precis(m1_narrowest_priors, depth = 2))
+
 ```
 
 > With much broader priors we can see that the model isn't able to find precise values for the parameters.
@@ -711,7 +719,7 @@ precis_plot(precis(m1_narrowest_priors, depth = 2))
 # include interaction between class and age
 m3 <- ulam(
   alist(
-    Survived ~ dbinom(1, p),
+    Survived ~ dbern(p),
     logit(p) <- a + b_sex[Sex] + b_cls[Pclass] * Age,
     a ~ dnorm(0, 1),
     b_cls[Pclass] ~ dnorm(0, 1),
@@ -733,7 +741,7 @@ precis_plot(precis(m3, depth = 2))
 # simple prediction of survival from age
 m4 <- ulam(
   alist(
-    Survived ~ dbinom(1, p),
+    Survived ~ dbern(p),
     logit(p) <- a + b_age * Age,
     a ~ dnorm(0, 1),
     b_age ~ dnorm(0, 1)
@@ -753,7 +761,7 @@ precis_plot(precis(m4, depth = 2))
 # intercept per class and sex
 m5 <- ulam(
   alist(
-    Survived ~ dbinom(1, p),
+    Survived ~ dbern(p),
     logit(p) <- a[Sex, Pclass] + b_age * Age,
     matrix[Sex, Pclass]:a ~ normal(0, 1),
     b_age ~ dnorm(0, 1)
@@ -771,7 +779,7 @@ precis(m5, depth = 3)
 precis_plot(precis(m5, depth = 3))
 
 
-compare(
+model_comp <- compare(
   m1,
   m1_broad_priors,
   m1_narrower_priors,
@@ -780,6 +788,11 @@ compare(
   m4,
   m5,
   n = 5000)
+model_comp
+plot(model_comp)
+
+postcheck(m5, window = 100)
+
 
 # PSIS takes 10+ minutes and gave exactly the same results as WAIC
 # compare(
@@ -795,7 +808,7 @@ compare(
 ```
 
 > Model comparison shows our most complex model has the best results (m5, which includes modelling intercepts for combinations of passenger class and sex).
-
+> also interesting to note that the model predicting survival from age alone (m4) suggests that ther may be a weak effect, but at the same time, our graphs earlier indicated a more complex (i.e. parabolic) relationship between age and survival, which could fit with the idea of saving young children.
 
 ## 9. Use the statistical model to do inference
 
@@ -808,3 +821,86 @@ Make a tiny conclusion here. Maybe try and give a theoretical reason for
 your results.
 
 And drink some tea or coffee :)
+
+
+```{r model_inference, warning=FALSE}
+library(modelr)
+library(tidybayes)
+library(tidybayes.rethinking)
+
+
+d_df <- as.data.frame(d)
+d_df$Survived <- as.logical(d_df$Survived)
+m5 <- recover_types(m5, d_df)
+
+d_df %>%
+  data_grid(Sex, Pclass, Age) %>%
+  add_predicted_draws(m5) %>%
+  mutate(Survived = as.logical(.prediction)) %>%
+  ggplot(aes(x = Survived)) +
+  geom_bar(
+    aes(
+      y = after_stat(count / tapply(count, PANEL, sum)[PANEL] * 100),
+      fill = "Actual Data"),
+    data = d_df,
+    position = position_dodge2(width = 0.5, padding = 0.5)) +
+  geom_bar(
+    aes(
+      y = after_stat(count / tapply(count, PANEL, sum)[PANEL] * 100),
+      fill = "Model Predicted"),
+      width = 0.5,
+      position = position_dodge2(width = 0.5, padding = -0.5)) +
+  scale_fill_manual(
+    name = "Source",
+    values = c("#0000ff8b", "#6ad0ff93")) +
+  facet_grid(vars(Sex), vars(Pclass),
+    labeller = labeller(
+    .rows = c("1" = "Female", "2" = "Male"),
+    .cols = c("1" = "1st Class", "2" = "2nd Class", "3" = "3rd Class")
+  )) +
+  labs(
+    title = "Proportional survival rate of passengers",
+    x = "Survived",
+    y = "Percentage of passengers (by Sex and Class)")
+
+# test our predictions with our best model
+mu <- link(m5)
+mu_mean <- apply(mu, 2, mean)
+# make predictions binary
+pred_binary <- ifelse(mu_mean <= 0.5, 0, 1)
+correct_prediction <- as.numeric(pred_binary == d$Survived)
+
+# calculate correct prediction rate
+m5_pct_correct <- sum(correct_prediction) / length(correct_prediction)
+# m5 confusion matrix
+m5_confusion_matrix <- table(
+  list(
+    "Predicted" = pred_binary,
+    "Actual" = d$Survived))
+print("M5 accuracy:")
+print(m5_pct_correct * 100)
+
+print("M5 confusion matrix:")
+print(m5_confusion_matrix)
+
+# Summarise m5 again
+precis(m5, depth = 3)
+precis_plot(precis(m5, depth = 3))
+```
+
+> For our final model, we can see that the posterior predictions for passenger survival based on sex and class is quite good, with an accuracy rate of 79.7%, no doubt there are other factors in play that make this difficult to predict with 100% accuracy.
+> The confusion matrix of our model indicates that it's overzealous in predicting that passengers did not survive (false negative) and our plots support that.
+> 
+> For our model parameters, we have Sex+Class and age, applying a linear relationship between age and survival is probably an oversimplification, as we saw previously that passengers who were very young were more likely to survive, and then again a peak around 40, and then declining again. Some of this could be due to the age of passengers in particular classes.
+>
+> For passenger sex, female passengers are more likely to survive than male, and for class, passengers are most likely to survive if they are in first class, followed by second class and then least likely in third class.
+>
+> Only female passengers in first and second class have a positive (and relatively large) effect on survival, all the other parameters have a negative effect on survival. Although the effect of a male, first class passenger is around zero and well within the distribution's estimated 89% confidence intervals.
+>
+> Obvioulsy this model is far from perfect, and making it more complex by including age as an effect on passenger class could increase the model's performance, but increasing the number of parameters also increases the risk of overfitting to the training data.
+>
+> When we apply this to the real life titanic situation, there are also other factors to consider, including the passengers proximity to the life boats when evacutation started, and even the passengers' percieved social status (I'm not sure if passengers had to show their tickets before boarding a life raft, so anyone could say they were first class if other people believed them).
+> 
+> Finally, if we were to explaion the model effects in real life, we might attribute the age effect and sex effect to the idea of "saving the women and children", and the class effects through the cynical lens of saving passengers who paid more for tickets and were more wealthy before the less wealthy. Although it is possible that first and second class passengers were just able to get to the life boats more quickly than third class passengers (which the image below offers some support for).
+
+[Titanic passenger class accommodation location](https://www.encyclopedia-titanica.org/files/1/figure-one-side-view.gif)
