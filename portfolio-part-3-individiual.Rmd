@@ -6,6 +6,8 @@ output:
 ---
 
 ```{r setup, echo=FALSE}
+knitr::opts_chunk$set(fig.width = 10, warning = FALSE)
+
 library(tidyverse)
 library(LaplacesDemon)
 library(rethinking)
@@ -20,8 +22,8 @@ options(mc.cores = n_cores)
 
 # set random seed for reproducibility
 set.seed(133742)
-options(digits=3)
-knitr::opts_chunk(fig.width = 10, warning = FALSE)
+options(digits = 3)
+
 
 ```
 
