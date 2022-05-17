@@ -23,7 +23,7 @@ options(mc.cores = n_cores)
 # set random seed for reproducibility
 set.seed(133742)
 options(digits = 3)
-
+.pardefault <- par()
 
 ```
 
@@ -475,6 +475,7 @@ pr_p <- link(m1, data = d, post = pr)
 
 pr_p_m <- rowMeans(pr_p)
 p <- inv_logit(pr_p_m)
+par(.pardefault)
 dens(p, adj = 0.1)
 ```
 
@@ -488,8 +489,8 @@ the simulated data. If they aren\'t, something\'s probably wrong.
 
 > The implied conditional independencies found in our dag were:
 > 
-> A \_||\_ Sx
-> C \_||\_ Sx
+> - A \_||\_ Sx
+> - C \_||\_ Sx
 
 ```{r test_sim, warning=FALSE}
 # first lest run our model on the simulated data
@@ -537,6 +538,7 @@ m2_A_Sx <- ulam(
 )
 
 precis(m2_A_Sx, depth = 2)
+par(.pardefault)
 precis_plot(precis(m2_A_Sx, depth = 2))
 
 # outcome is expected to be [0,1]
@@ -561,11 +563,12 @@ m2_Sx_C <- ulam(
 )
 
 precis(m2_Sx_C, depth = 2)
+par(.pardefault)
 precis_plot(precis(m2_Sx_C, depth = 2))
 
 ```
 
-> Both conditional independencies stand in the simulated data. Running the model on the simulated data also gives us a healthy looking chain on inspection (chain 1).
+> Both conditional independencies stand in the simulated data (with largely overlapping confidence intervals). Running the model on the simulated data also gives us a healthy looking chain on inspection (chain 1).
 
 
 ## 7. Assess whether the DAG is compatible with the data
@@ -905,4 +908,4 @@ precis_plot(precis(m5, depth = 3))
 > 
 > Finally, if we were to explaion the model effects in real life, we might attribute the age effect and sex effect to the idea of "saving the women and children", and the class effects through the cynical lens of saving passengers who paid more for tickets and were more wealthy before the less wealthy. Although it is possible that first and second class passengers were just able to get to the life boats more quickly than third class passengers (which the image below offers some support for).
 
-[Titanic passenger class accommodation location](https://www.encyclopedia-titanica.org/files/1/figure-one-side-view.gif)
+![Titanic passenger class accommodation location](https://www.encyclopedia-titanica.org/files/1/figure-one-side-view.gif "Titanic passenger class accommodation location")
